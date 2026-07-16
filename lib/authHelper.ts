@@ -1,4 +1,8 @@
-import { adminAuth, adminDb } from "./firebaseAdmin";
+import { getAuth } from "firebase-admin/auth";
+import { adminDb, adminApp } from "./firebaseAdmin";
+
+const adminAuth = getAuth(adminApp);
+
 
 /**
  * Helper to verify if the request is made by an authenticated administrator.
