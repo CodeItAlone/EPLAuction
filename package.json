@@ -26,7 +26,8 @@
     "typescript": "^5"
   },
   "overrides": {
-    "jose": "5.9.6"
+    "jose": "5.10.0"
   }
 }
+
 
