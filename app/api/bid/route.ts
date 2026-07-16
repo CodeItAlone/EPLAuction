@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { verifyAdmin } from "@/lib/authHelper";
 import { calculateMaxAllowedBid, BASE_PRICE, MAX_SQUAD_SIZE } from "@/lib/bidValidation";
 import { FieldValue } from "firebase-admin/firestore";
 
 export async function POST(req: Request) {
   try {
+    const { verifyAdmin } = await import("@/lib/authHelper");
     const adminUid = await verifyAdmin(req);
     const body = await req.json();
     const { playerId, teamId, bidAmount } = body;

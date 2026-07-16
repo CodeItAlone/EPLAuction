@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { verifyAdmin } from "@/lib/authHelper";
 import { FieldValue } from "firebase-admin/firestore";
 
 export async function POST(req: Request) {
   try {
+    const { verifyAdmin } = await import("@/lib/authHelper");
     await verifyAdmin(req);
 
     // 1. Find the most recent winning bid outside the transaction

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebaseAdmin";
-import { verifyAdmin } from "@/lib/authHelper";
 import { FieldValue } from "firebase-admin/firestore";
 
 interface TeamUpdateInput {
@@ -24,6 +23,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
+    const { verifyAdmin } = await import("@/lib/authHelper");
     await verifyAdmin(req);
     const body = await req.json();
     const { teamName, ownerName, logoUrl, startingWallet } = body;
@@ -56,6 +56,7 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   try {
+    const { verifyAdmin } = await import("@/lib/authHelper");
     await verifyAdmin(req);
     const body = await req.json();
     const { id, teamName, ownerName, logoUrl, startingWallet } = body;
@@ -91,6 +92,7 @@ export async function PUT(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    const { verifyAdmin } = await import("@/lib/authHelper");
     await verifyAdmin(req);
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
