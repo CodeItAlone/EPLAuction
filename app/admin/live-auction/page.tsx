@@ -20,6 +20,8 @@ interface Player {
   };
   basePrice: number;
   status: "pool" | "sold" | "unsold";
+  soldPrice?: number | null;
+  soldToTeamId?: string | null;
 }
 
 interface Team {
@@ -53,6 +55,7 @@ export default function LiveAuctionControl() {
   const [proposedBid, setProposedBid] = useState(BASE_PRICE);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [activeQueueTab, setActiveQueueTab] = useState<"upcoming" | "completed" | "unqueued">("upcoming");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem("admin_token");
@@ -360,7 +363,9 @@ export default function LiveAuctionControl() {
         },
         body: JSON.stringify({
           id: activePlayer.id,
-          status: "unsold",
+          status: "pool",
+          soldPrice: null,
+          soldToTeamId: null,
         }),
       });
 
@@ -419,21 +424,74 @@ export default function LiveAuctionControl() {
   const queueIds = auctionState?.queue || [];
   const currentIndex = auctionState?.currentQueueIndex || 0;
 
+  // Stably sort players by creation time or name to get permanent registration numbers
+  const sortedPlayersForReg = [...players].sort((a, b) => {
+    const timeA = (a as any).createdAt?.seconds || 0;
+    const timeB = (b as any).createdAt?.seconds || 0;
+    if (timeA !== timeB) return timeA - timeB;
+    return a.name.localeCompare(b.name);
+  });
+
+  const getRegNo = (playerId: string) => {
+    return sortedPlayersForReg.findIndex((p) => p.id === playerId) + 1;
+  };
+
   const upcomingQueue = queueIds
     .slice(currentIndex)
     .map((id: string) => players.find(p => p.id === id))
     .filter((p: Player | undefined): p is Player => p !== undefined);
 
-  const completedQueue = queueIds
-    .slice(0, currentIndex)
-    .map((id: string) => players.find(p => p.id === id))
-    .filter((p: Player | undefined): p is Player => p !== undefined);
+  const completedQueue = players.filter(p => p.status === "sold");
 
   const unqueuedPool = players.filter(p => 
     p.status === "pool" && 
     p.id !== activePlayer?.id && 
     !queueIds.slice(currentIndex).includes(p.id)
   );
+
+  const handleHoistToNext = async (playerId: string) => {
+    const queue = auctionState?.queue ?? [];
+    const index = auctionState?.currentQueueIndex ?? 0;
+
+    const oldIndex = queue.indexOf(playerId);
+    let newQueue = queue.filter((id) => id !== playerId);
+    
+    // If the player was in the completed part (before current index),
+    // removing them shifts all subsequent items left by 1.
+    // So the new upcoming insertion index should be index - 1.
+    const insertionIndex = (oldIndex !== -1 && oldIndex < index) ? Math.max(0, index - 1) : index;
+
+    newQueue.splice(insertionIndex, 0, playerId);
+
+    await updateQueueState(newQueue, insertionIndex);
+    showStatus("success", "Player moved to the next slot in the queue.");
+  };
+
+  const regNum = parseInt(searchQuery, 10);
+  const isValidSearch = !isNaN(regNum) && regNum >= 1 && regNum <= players.length;
+  const isOutOfBounds = searchQuery.trim() !== "" && (isNaN(regNum) || regNum < 1 || regNum > players.length);
+
+  const searchResults = isValidSearch && sortedPlayersForReg[regNum - 1]
+    ? (() => {
+        const p = sortedPlayersForReg[regNum - 1];
+        let section: "upcoming" | "completed" | "unqueued" | "hammer" = "unqueued";
+        let queuePosition = -1;
+
+        if (p.id === activePlayer?.id) {
+          section = "hammer";
+        } else if (p.status === "sold") {
+          section = "completed";
+        } else {
+          const qIdx = queueIds.indexOf(p.id);
+          if (qIdx !== -1 && qIdx >= currentIndex) {
+            section = "upcoming";
+            queuePosition = qIdx - currentIndex + 1;
+          }
+        }
+
+        return [{ player: p, section, queuePosition }];
+      })()
+    : [];
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-8 text-slate-100 flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -565,50 +623,78 @@ export default function LiveAuctionControl() {
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-[#1E293B] p-6">
-          <div className="flex border-b border-slate-800 pb-2 mb-4 justify-between items-center">
-            <h3 className="text-lg font-bold text-slate-350 uppercase tracking-wider">
+          <div className="flex flex-col border-b border-slate-800 pb-3 mb-4 gap-3">
+            <h3 className="text-lg font-bold text-slate-355 uppercase tracking-wider">
               Auction Queue Dashboard
             </h3>
-            <div className="flex gap-2 text-xs font-bold">
-              <button
-                onClick={() => setActiveQueueTab("upcoming")}
-                className={`px-3 py-1 rounded transition-colors ${
-                  activeQueueTab === "upcoming" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"
-                }`}
-              >
-                Upcoming ({upcomingQueue.length})
-              </button>
-              <button
-                onClick={() => setActiveQueueTab("completed")}
-                className={`px-3 py-1 rounded transition-colors ${
-                  activeQueueTab === "completed" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"
-                }`}
-              >
-                Completed ({completedQueue.length})
-              </button>
-              <button
-                onClick={() => setActiveQueueTab("unqueued")}
-                className={`px-3 py-1 rounded transition-colors ${
-                  activeQueueTab === "unqueued" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"
-                }`}
-              >
-                Unqueued Pool ({unqueuedPool.length})
-              </button>
+            <div className="relative w-full">
+              <input
+                type="number"
+                min={1}
+                max={players.length}
+                placeholder={`🔍 Search by registration number (1–${players.length})...`}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-white placeholder-slate-400 focus:border-blue-500 focus:outline-none"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-sm"
+                >
+                  ✕
+                </button>
+              )}
             </div>
+            {isOutOfBounds && (
+              <p className="text-red-400 text-xs font-semibold">
+                ⚠️ Invalid registration number. Range is 1 to {players.length}
+              </p>
+            )}
           </div>
 
-          {activeQueueTab === "upcoming" && (
+          {!searchQuery && (
+            <div className="flex border-b border-slate-800 pb-2 mb-4 justify-end">
+              <div className="flex gap-2 text-xs font-bold">
+                <button
+                  onClick={() => setActiveQueueTab("upcoming")}
+                  className={`px-3 py-1 rounded transition-colors ${
+                    activeQueueTab === "upcoming" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"
+                  }`}
+                >
+                  Upcoming ({upcomingQueue.length})
+                </button>
+                <button
+                  onClick={() => setActiveQueueTab("completed")}
+                  className={`px-3 py-1 rounded transition-colors ${
+                    activeQueueTab === "completed" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"
+                  }`}
+                >
+                  Completed ({completedQueue.length})
+                </button>
+                <button
+                  onClick={() => setActiveQueueTab("unqueued")}
+                  className={`px-3 py-1 rounded transition-colors ${
+                    activeQueueTab === "unqueued" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"
+                  }`}
+                >
+                  Unqueued Pool ({unqueuedPool.length})
+                </button>
+              </div>
+            </div>
+          )}
+
+          {searchQuery ? (
             <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
-              {upcomingQueue.length > 0 ? (
-                upcomingQueue.map((p, index) => {
-                  const globalIndex = currentIndex + index;
+              {!isOutOfBounds && searchResults.length > 0 ? (
+                searchResults.map(({ player: p, section, queuePosition }) => {
+                  const boughtTeam = p.soldToTeamId ? teams.find(t => t.id === p.soldToTeamId) : null;
                   return (
                     <div
                       key={p.id}
-                      className="flex items-center justify-between p-3 bg-slate-900/40 rounded-lg border border-slate-800 hover:border-slate-750 transition-all"
+                      className="flex items-center justify-between p-3 bg-slate-900/40 rounded-lg border border-slate-800 hover:border-slate-700 transition-all"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="text-xs text-slate-500 font-bold w-4">#{index + 1}</span>
                         <div className="relative h-10 w-10 overflow-hidden rounded bg-slate-800 flex items-center justify-center border border-slate-750">
                           {p.photoUrl ? (
                             <Image src={p.photoUrl} alt={p.name} fill className="object-cover" unoptimized />
@@ -617,126 +703,225 @@ export default function LiveAuctionControl() {
                           )}
                         </div>
                         <div>
-                          <p className="font-bold text-slate-200 text-sm line-clamp-1">{p.name}</p>
-                          <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-semibold">{p.role}</span>
+                          <div className="flex items-center gap-2">
+                            <p className="font-bold text-slate-200 text-sm line-clamp-1">#{getRegNo(p.id)} {p.name}</p>
+                            <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-semibold">{p.role}</span>
+                          </div>
+                          <div className="flex flex-col gap-1 mt-1">
+                            {section === "hammer" && (
+                              <span className="text-[9px] bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded font-bold w-fit">
+                                🔨 Under Hammer
+                              </span>
+                            )}
+                            {section === "upcoming" && (
+                              <span className="text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-bold w-fit">
+                                Upcoming (Position #{queuePosition})
+                              </span>
+                            )}
+                            {section === "completed" && (
+                              <div className="flex flex-col gap-1">
+                                <span className={`text-[9px] border px-1.5 py-0.5 rounded font-bold w-fit ${
+                                  p.status === "sold" 
+                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                                    : "bg-red-500/10 text-red-400 border-red-500/20"
+                                }`}>
+                                  Completed ({p.status})
+                                </span>
+                                {p.status === "sold" && (
+                                  <span className="text-[10px] font-semibold text-slate-400">
+                                    Sold to <span className="text-slate-300 font-bold">{boughtTeam?.teamName || "unknown team"}</span> for <span className="text-emerald-400 font-bold">{p.soldPrice} pts</span>
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            {section === "unqueued" && (
+                              <span className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-bold w-fit">
+                                Unqueued Pool
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {index === 0 && (
+
+                      <div>
+                        {section === "upcoming" && queuePosition > 1 && (
                           <button
-                            onClick={handleLoadNextPlayer}
-                            className="rounded bg-emerald-600/20 text-emerald-400 border border-emerald-500/20 px-3 py-1 text-xs font-bold hover:bg-emerald-600 hover:text-white transition-all uppercase tracking-wider"
+                            onClick={() => handleHoistToNext(p.id)}
+                            className="rounded bg-blue-600/20 text-blue-400 border border-blue-500/20 px-3 py-1 text-xs font-bold hover:bg-blue-600 hover:text-white transition-all uppercase tracking-wider"
                           >
-                            🔨 Load
+                            ⚡ Make Next
                           </button>
                         )}
-                        <button
-                          disabled={index === 0}
-                          onClick={() => handleMoveUp(globalIndex)}
-                          className="p-1 text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-30 disabled:hover:text-slate-400"
-                        >
-                          ▲
-                        </button>
-                        <button
-                          disabled={globalIndex >= queueIds.length - 1}
-                          onClick={() => handleMoveDown(globalIndex)}
-                          className="p-1 text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-30 disabled:hover:text-slate-400"
-                        >
-                          ▼
-                        </button>
-                        <button
-                          onClick={() => handleRemovePlayerFromQueue(p.id)}
-                          className="p-1 text-red-400 hover:text-red-300 transition-colors"
-                          title="Remove from queue"
-                        >
-                          ❌
-                        </button>
+                        {section === "unqueued" && (
+                          <button
+                            onClick={() => handleHoistToNext(p.id)}
+                            className="rounded bg-emerald-600/20 text-emerald-400 border border-emerald-500/20 px-3 py-1 text-xs font-bold hover:bg-emerald-600 hover:text-white transition-all uppercase tracking-wider"
+                          >
+                            + Add to Next
+                          </button>
+                        )}
+                        {section === "completed" && (
+                          <button
+                            onClick={() => handleHoistToNext(p.id)}
+                            className="rounded bg-amber-600/20 text-amber-400 border border-amber-500/20 px-3 py-1 text-xs font-bold hover:bg-amber-600 hover:text-white transition-all uppercase tracking-wider"
+                          >
+                            ↩️ Restore to Next
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
                 })
               ) : (
-                <div className="text-center py-6 text-slate-500 text-sm">
-                  <p>Queue is currently empty.</p>
-                  <button
-                    onClick={handleSkipPlayer}
-                    className="mt-2 text-xs text-blue-400 font-bold hover:underline"
-                  >
-                    Skip Active Slot
-                  </button>
+                <p className="text-slate-500 text-sm text-center py-6">
+                  {isOutOfBounds ? "Please correct search query" : `No player registered at registration number ${searchQuery}`}
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              {activeQueueTab === "upcoming" && (
+                <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
+                  {upcomingQueue.length > 0 ? (
+                    upcomingQueue.map((p, index) => {
+                      const globalIndex = currentIndex + index;
+                      return (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between p-3 bg-slate-900/40 rounded-lg border border-slate-800 hover:border-slate-750 transition-all"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-slate-500 font-bold w-4">#{index + 1}</span>
+                            <div className="relative h-10 w-10 overflow-hidden rounded bg-slate-800 flex items-center justify-center border border-slate-750">
+                              {p.photoUrl ? (
+                                <Image src={p.photoUrl} alt={p.name} fill className="object-cover" unoptimized />
+                              ) : (
+                                <span>👤</span>
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-200 text-sm line-clamp-1">#{getRegNo(p.id)} {p.name}</p>
+                              <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-semibold">{p.role}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {index === 0 && (
+                              <button
+                                onClick={handleLoadNextPlayer}
+                                className="rounded bg-emerald-600/20 text-emerald-400 border border-emerald-500/20 px-3 py-1 text-xs font-bold hover:bg-emerald-600 hover:text-white transition-all uppercase tracking-wider"
+                              >
+                                🔨 Load
+                              </button>
+                            )}
+                            <button
+                              disabled={index === 0}
+                              onClick={() => handleMoveUp(globalIndex)}
+                              className="p-1 text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-30 disabled:hover:text-slate-400"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              disabled={globalIndex >= queueIds.length - 1}
+                              onClick={() => handleMoveDown(globalIndex)}
+                              className="p-1 text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-30 disabled:hover:text-slate-400"
+                            >
+                              ▼
+                            </button>
+                            <button
+                              onClick={() => handleRemovePlayerFromQueue(p.id)}
+                              className="p-1 text-red-400 hover:text-red-300 transition-colors"
+                              title="Remove from queue"
+                            >
+                              ❌
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-6 text-slate-500 text-sm">
+                      <p>Queue is currently empty.</p>
+                      <button
+                        onClick={handleSkipPlayer}
+                        className="mt-2 text-xs text-blue-400 font-bold hover:underline"
+                      >
+                        Skip Active Slot
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          {activeQueueTab === "completed" && (
-            <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
-              {completedQueue.length > 0 ? (
-                completedQueue.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center justify-between p-3 bg-slate-900/20 rounded-lg border border-slate-850 hover:border-slate-800 transition-all"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative h-10 w-10 overflow-hidden rounded bg-slate-850 flex items-center justify-center border border-slate-800">
-                        {p.photoUrl ? (
-                          <Image src={p.photoUrl} alt={p.name} fill className="object-cover" unoptimized />
-                        ) : (
-                          <span>👤</span>
-                        )}
+              {activeQueueTab === "completed" && (
+                <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
+                  {completedQueue.length > 0 ? (
+                    completedQueue.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between p-3 bg-slate-900/20 rounded-lg border border-slate-855 hover:border-slate-800 transition-all"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="relative h-10 w-10 overflow-hidden rounded bg-slate-855 flex items-center justify-center border border-slate-800">
+                            {p.photoUrl ? (
+                              <Image src={p.photoUrl} alt={p.name} fill className="object-cover" unoptimized />
+                            ) : (
+                              <span>👤</span>
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-355 text-sm line-clamp-1">#{getRegNo(p.id)} {p.name}</p>
+                            <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-semibold uppercase">{p.status}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleRestorePlayerToQueue(p.id)}
+                          className="rounded bg-blue-600/10 text-blue-400 border border-blue-500/15 px-3 py-1 text-xs font-bold hover:bg-blue-600 hover:text-white transition-all"
+                        >
+                          Restore to Queue
+                        </button>
                       </div>
-                      <div>
-                        <p className="font-bold text-slate-350 text-sm line-clamp-1">{p.name}</p>
-                        <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-semibold uppercase">{p.status}</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleRestorePlayerToQueue(p.id)}
-                      className="rounded bg-blue-600/10 text-blue-400 border border-blue-500/15 px-3 py-1 text-xs font-bold hover:bg-blue-600 hover:text-white transition-all"
-                    >
-                      Restore to Queue
-                    </button>
-                  </div>
-                ))
-              ) : (
-                <p className="text-slate-500 text-sm text-center py-6">No completed players yet.</p>
+                    ))
+                  ) : (
+                    <p className="text-slate-500 text-sm text-center py-6">No completed players yet.</p>
+                  )}
+                </div>
               )}
-            </div>
-          )}
 
-          {activeQueueTab === "unqueued" && (
-            <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
-              {unqueuedPool.length > 0 ? (
-                unqueuedPool.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center justify-between p-3 bg-slate-900/40 rounded-lg border border-slate-800 hover:border-slate-700 transition-all"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative h-10 w-10 overflow-hidden rounded bg-slate-800 flex items-center justify-center border border-slate-755">
-                        {p.photoUrl ? (
-                          <Image src={p.photoUrl} alt={p.name} fill className="object-cover" unoptimized />
-                        ) : (
-                          <span>👤</span>
-                        )}
+              {activeQueueTab === "unqueued" && (
+                <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
+                  {unqueuedPool.length > 0 ? (
+                    unqueuedPool.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between p-3 bg-slate-900/40 rounded-lg border border-slate-800 hover:border-slate-700 transition-all"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="relative h-10 w-10 overflow-hidden rounded bg-slate-800 flex items-center justify-center border border-slate-755">
+                            {p.photoUrl ? (
+                              <Image src={p.photoUrl} alt={p.name} fill className="object-cover" unoptimized />
+                            ) : (
+                              <span>👤</span>
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-200 text-sm line-clamp-1">#{getRegNo(p.id)} {p.name}</p>
+                            <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-semibold">{p.role}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleRestorePlayerToQueue(p.id)}
+                          className="rounded bg-blue-600/20 text-blue-400 border border-blue-500/20 px-3 py-1 text-xs font-bold hover:bg-blue-600 hover:text-white transition-all"
+                        >
+                          + Add to Queue
+                        </button>
                       </div>
-                      <div>
-                        <p className="font-bold text-slate-200 text-sm line-clamp-1">{p.name}</p>
-                        <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 font-semibold">{p.role}</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleRestorePlayerToQueue(p.id)}
-                      className="rounded bg-blue-600/20 text-blue-400 border border-blue-500/20 px-3 py-1 text-xs font-bold hover:bg-blue-600 hover:text-white transition-all"
-                    >
-                      + Add to Queue
-                    </button>
-                  </div>
-                ))
-              ) : (
-                <p className="text-slate-500 text-sm text-center py-6">No unqueued players available in pool.</p>
+                    ))
+                  ) : (
+                    <p className="text-slate-500 text-sm text-center py-6">No unqueued players available in pool.</p>
+                  )}
+                </div>
               )}
-            </div>
+            </>
           )}
         </div>
       </div>
