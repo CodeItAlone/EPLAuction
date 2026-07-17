@@ -92,6 +92,7 @@ export async function POST(req: Request) {
         currentHighestBid: 0,
         currentHighestTeamId: null,
         status: "idle",
+        bidTimerExpiresAt: null,
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
 

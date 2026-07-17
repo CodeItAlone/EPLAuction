@@ -119,7 +119,7 @@ export default function PlayerCard({ player, teamName, teamLogo }: PlayerCardPro
                 )}
                 <span className="font-black text-emerald-400 text-lg leading-none">{player.soldPrice} pts</span>
               </div>
-              <span className="text-[10px] text-slate-400 font-medium block truncate max-w-[120px]">{teamName}</span>
+              <span className="text-xs text-slate-300 font-bold block truncate max-w-[140px] mt-0.5">{teamName}</span>
             </div>
           ) : player.status === "unsold" ? (
             <div>

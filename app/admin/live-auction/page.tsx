@@ -41,6 +41,7 @@ interface AuctionState {
   status: string;
   queue?: string[];
   currentQueueIndex?: number;
+  bidTimerExpiresAt?: number | null;
 }
 
 export default function LiveAuctionControl() {
@@ -56,6 +57,7 @@ export default function LiveAuctionControl() {
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [activeQueueTab, setActiveQueueTab] = useState<"upcoming" | "completed" | "unqueued">("upcoming");
   const [searchQuery, setSearchQuery] = useState("");
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("admin_token");
@@ -248,6 +250,7 @@ export default function LiveAuctionControl() {
           currentHighestBid: player.basePrice || 30,
           currentHighestTeamId: null,
           status: "in-progress",
+          bidTimerExpiresAt: null,
         }),
       });
 
@@ -294,6 +297,7 @@ export default function LiveAuctionControl() {
         body: JSON.stringify({
           currentHighestBid: proposedBid,
           currentHighestTeamId: selectedBidTeamId,
+          bidTimerExpiresAt: Date.now() + 30000,
         }),
       });
 
@@ -424,6 +428,35 @@ export default function LiveAuctionControl() {
     }
   };
 
+  // Sync timeLeft with auctionState.bidTimerExpiresAt
+  useEffect(() => {
+    if (!auctionState?.bidTimerExpiresAt) {
+      setTimeLeft(null);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((auctionState.bidTimerExpiresAt! - Date.now()) / 1000));
+      setTimeLeft(remaining);
+
+      if (remaining === 0) {
+        clearInterval(interval);
+      }
+    }, 500);
+
+    const remaining = Math.max(0, Math.ceil((auctionState.bidTimerExpiresAt - Date.now()) / 1000));
+    setTimeLeft(remaining);
+
+    return () => clearInterval(interval);
+  }, [auctionState?.bidTimerExpiresAt]);
+
+  // Auto-sell when countdown hits 0
+  useEffect(() => {
+    if (timeLeft === 0 && activePlayer && auctionState?.currentHighestTeamId) {
+      handleConfirmSold();
+    }
+  }, [timeLeft, activePlayer, auctionState?.currentHighestTeamId]);
+
   const queueIds = auctionState?.queue || [];
   const currentIndex = auctionState?.currentQueueIndex || 0;
 
@@ -449,7 +482,7 @@ export default function LiveAuctionControl() {
   const unqueuedPool = players.filter(p => 
     p.status === "pool" && 
     p.id !== activePlayer?.id && 
-    !queueIds.includes(p.id)
+    !queueIds.slice(currentIndex).includes(p.id)
   );
 
   const handleHoistToNext = async (playerId: string) => {
@@ -551,6 +584,12 @@ export default function LiveAuctionControl() {
 
               <div className="flex flex-col justify-between">
                 <div>
+                  {timeLeft !== null && (
+                    <div className="mb-4 flex items-center justify-between bg-amber-500/10 border border-amber-500/20 p-3 rounded-lg">
+                      <span className="text-xs font-bold text-amber-400 uppercase tracking-widest animate-pulse">⏱️ Live Bid Timer</span>
+                      <span className="text-2xl font-black text-amber-400">{timeLeft}s</span>
+                    </div>
+                  )}
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Record Live Bid</h4>
                   
                   <form onSubmit={handleUpdateBid} className="flex flex-col gap-4">

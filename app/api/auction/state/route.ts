@@ -47,6 +47,7 @@ export async function POST(req: Request) {
       currentQueueIndex,
       queue,
       bidHistory,
+      bidTimerExpiresAt,
     } = body;
 
     const updateData: Record<string, unknown> = {
@@ -60,6 +61,7 @@ export async function POST(req: Request) {
     if (currentQueueIndex !== undefined) updateData.currentQueueIndex = currentQueueIndex;
     if (queue !== undefined) updateData.queue = queue;
     if (bidHistory !== undefined) updateData.bidHistory = bidHistory;
+    if (bidTimerExpiresAt !== undefined) updateData.bidTimerExpiresAt = bidTimerExpiresAt;
 
     const stateRef = adminDb.collection("auctionState").doc("current");
     await stateRef.set(updateData, { merge: true });
