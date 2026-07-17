@@ -88,7 +88,9 @@ export default function LiveAuctionControl() {
         setAuctionState(state);
         
         if (state.currentPlayerId) {
-          const nextBidVal = state.currentHighestBid > 0 ? state.currentHighestBid + 10 : BASE_PRICE;
+          const nextBidVal = state.currentHighestTeamId
+            ? state.currentHighestBid + 10
+            : state.currentHighestBid;
           setProposedBid(nextBidVal);
         }
       }
@@ -311,9 +313,10 @@ export default function LiveAuctionControl() {
   const handleConfirmSold = async () => {
     if (!activePlayer) return;
 
-    // Use current form inputs if a team is selected, otherwise fall back to recorded highest bid
-    const finalTeamId = selectedBidTeamId || auctionState?.currentHighestTeamId;
-    const finalBidAmount = selectedBidTeamId ? proposedBid : auctionState?.currentHighestBid;
+    const finalTeamId = auctionState?.currentHighestTeamId || selectedBidTeamId;
+    const finalBidAmount = auctionState?.currentHighestTeamId 
+      ? auctionState?.currentHighestBid 
+      : activePlayer.basePrice;
 
     if (!finalTeamId || !finalBidAmount) {
       showStatus("error", "Cannot confirm sale: No team has been selected or bid recorded");
@@ -446,7 +449,7 @@ export default function LiveAuctionControl() {
   const unqueuedPool = players.filter(p => 
     p.status === "pool" && 
     p.id !== activePlayer?.id && 
-    !queueIds.slice(currentIndex).includes(p.id)
+    !queueIds.includes(p.id)
   );
 
   const handleHoistToNext = async (playerId: string) => {
@@ -582,6 +585,7 @@ export default function LiveAuctionControl() {
                         type="number"
                         required
                         min={BASE_PRICE}
+                        step={10}
                         value={proposedBid}
                         onChange={(e) => setProposedBid(Number(e.target.value))}
                         className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-4 py-2.5 text-sm text-white focus:border-blue-500 focus:outline-none"
