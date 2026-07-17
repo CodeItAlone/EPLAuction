@@ -7,6 +7,7 @@ import { calculateMaxAllowedBid } from "@/lib/bidValidation";
 import PlayerCard from "@/components/PlayerCard";
 import TeamCard from "@/components/TeamCard";
 import Image from "next/image";
+import SoldCelebrationOverlay from "@/components/SoldCelebrationOverlay";
 
 interface Player {
   id: string;
@@ -23,6 +24,7 @@ interface Player {
   status: "pool" | "sold" | "unsold";
   soldPrice: number | null;
   soldToTeamId: string | null;
+  updatedAt?: { seconds: number; nanoseconds: number } | null;
 }
 
 interface Team {
@@ -52,6 +54,57 @@ export default function Dashboard() {
   const [playerFilter, setPlayerFilter] = useState<"all" | "pool" | "sold" | "unsold">("all");
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+
+  // Sold Animation Overlay state
+  const [soldOverlay, setSoldOverlay] = useState<{
+    type: "sold" | "unsold";
+    playerName: string;
+    teamName: string;
+    price: number;
+    photoUrl?: string;
+  } | null>(null);
+
+  // Detect when a player is sold or marked unsold to trigger full-screen celebration/unsold animation overlay
+  useEffect(() => {
+    if (!auctionState) return;
+
+    const finishedPlayers = players.filter((p) => p.status === "sold" || p.status === "unsold");
+    if (finishedPlayers.length > 0) {
+      const sortedFinished = [...finishedPlayers].sort((a, b) => {
+        const aTime = a.updatedAt?.seconds || 0;
+        const bTime = b.updatedAt?.seconds || 0;
+        return bTime - aTime;
+      });
+
+      const latestFinished = sortedFinished[0];
+      if (latestFinished) {
+        const finishedSeconds = latestFinished.updatedAt?.seconds || 0;
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        if (nowSeconds - finishedSeconds < 6) {
+          const winningTeam = teams.find((t) => t.id === latestFinished.soldToTeamId);
+
+          const stateTimer = setTimeout(() => {
+            setSoldOverlay({
+              type: latestFinished.status as "sold" | "unsold",
+              playerName: latestFinished.name,
+              teamName: winningTeam?.teamName || "Anonymous Team",
+              price: latestFinished.soldPrice || latestFinished.basePrice,
+              photoUrl: latestFinished.photoUrl,
+            });
+          }, 0);
+
+          const hideTimer = setTimeout(() => {
+            setSoldOverlay(null);
+          }, 2000);
+
+          return () => {
+            clearTimeout(stateTimer);
+            clearTimeout(hideTimer);
+          };
+        }
+      }
+    }
+  }, [players, auctionState, teams]);
 
   // Subscribe to real-time collections
   useEffect(() => {
@@ -146,6 +199,18 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-8 text-slate-100 flex-1 flex flex-col">
+      {/* Sold/Unsold Celebration Overlay */}
+      {soldOverlay && (
+        <SoldCelebrationOverlay
+          type={soldOverlay.type}
+          playerName={soldOverlay.playerName}
+          teamName={soldOverlay.teamName}
+          price={soldOverlay.price}
+          photoUrl={soldOverlay.photoUrl}
+          onClose={() => setSoldOverlay(null)}
+        />
+      )}
+
       {/* Realtime Live Bid Banner at the top if in progress */}
       {auctionState?.status === "in-progress" && activePlayer && (
         <div className="mb-6 rounded-xl border border-blue-500/40 bg-gradient-to-r from-blue-900/30 to-[#0B0F19] p-4 flex flex-col md:flex-row items-center justify-between gap-4 animate-pulse">

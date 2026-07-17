@@ -5,6 +5,7 @@ import Image from "next/image";
 import { collection, onSnapshot, doc } from "firebase/firestore";
 import { db } from "@/lib/firebaseClient";
 import { calculateMaxAllowedBid, MAX_SQUAD_SIZE } from "@/lib/bidValidation";
+import SoldCelebrationOverlay from "@/components/SoldCelebrationOverlay";
 
 interface Player {
   id: string;
@@ -145,7 +146,7 @@ export default function ProjectorMode() {
 
           const hideTimer = setTimeout(() => {
             setSoldOverlay(null);
-          }, 5000);
+          }, 2000);
 
           return () => {
             clearTimeout(stateTimer);
@@ -170,49 +171,14 @@ export default function ProjectorMode() {
     <div className="flex flex-col min-h-screen bg-[#070B13] text-slate-100 p-8 select-none font-sans overflow-hidden">
       {/* Dynamic Sold / Unsold Overlay */}
       {soldOverlay && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/95 animate-fade-in p-8 text-center">
-          <div className={`absolute inset-0 bg-radial-gradient ${
-            soldOverlay.type === "sold" ? "from-emerald-500/10" : "from-red-500/10"
-          } to-transparent pointer-events-none`} />
-          <div className="relative animate-scale-up flex flex-col items-center">
-            <span className={`text-4xl sm:text-6xl font-black ${
-              soldOverlay.type === "sold" ? "text-emerald-400" : "text-red-400"
-            } uppercase tracking-widest mb-4 animate-bounce`}>
-              🎉 {soldOverlay.type === "sold" ? "SOLD" : "UNSOLD"} 🎉
-            </span>
-            <div className={`relative h-44 w-44 sm:h-56 sm:w-56 overflow-hidden rounded-full border-4 ${
-              soldOverlay.type === "sold" ? "border-emerald-500 shadow-[0_0_50px_rgba(16,185,129,0.3)]" : "border-red-500 shadow-[0_0_50px_rgba(239,68,68,0.3)]"
-            } bg-slate-900 mb-6`}>
-              {soldOverlay.photoUrl ? (
-                <Image src={soldOverlay.photoUrl} alt={soldOverlay.playerName} fill className="object-cover" unoptimized />
-              ) : (
-                <span className="text-7xl flex items-center justify-center h-full">👤</span>
-              )}
-            </div>
-            <h2 className="text-4xl sm:text-6xl font-black text-white uppercase tracking-wider mb-2">
-              {soldOverlay.playerName}
-            </h2>
-            {soldOverlay.type === "sold" ? (
-              <>
-                <p className="text-xl sm:text-2xl text-slate-400 font-bold uppercase mb-4">
-                  Secured by <span className="text-emerald-400">{soldOverlay.teamName}</span>
-                </p>
-                <div className="bg-emerald-500 text-slate-950 font-black text-3xl sm:text-5xl px-8 py-3.5 rounded-full shadow-lg tracking-wider">
-                  {soldOverlay.price} PTS
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="text-xl sm:text-2xl text-slate-400 font-bold uppercase mb-4 text-red-400">
-                  Returns to the Pool
-                </p>
-                <div className="bg-red-500 text-slate-950 font-black text-3xl sm:text-5xl px-8 py-3.5 rounded-full shadow-lg tracking-wider">
-                  UNSOLD
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        <SoldCelebrationOverlay
+          type={soldOverlay.type}
+          playerName={soldOverlay.playerName}
+          teamName={soldOverlay.teamName}
+          price={soldOverlay.price}
+          photoUrl={soldOverlay.photoUrl}
+          onClose={() => setSoldOverlay(null)}
+        />
       )}
 
       {/* Main Grid Layout for Projector Display */}

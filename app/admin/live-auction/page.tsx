@@ -6,6 +6,7 @@ import { db } from "@/lib/firebaseClient";
 import { calculateMaxAllowedBid, validateBid, BASE_PRICE } from "@/lib/bidValidation";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import SoldCelebrationOverlay from "@/components/SoldCelebrationOverlay";
 
 interface Player {
   id: string;
@@ -22,6 +23,7 @@ interface Player {
   status: "pool" | "sold" | "unsold";
   soldPrice?: number | null;
   soldToTeamId?: string | null;
+  updatedAt?: { seconds: number; nanoseconds: number } | null;
 }
 
 interface Team {
@@ -58,6 +60,57 @@ export default function LiveAuctionControl() {
   const [activeQueueTab, setActiveQueueTab] = useState<"upcoming" | "completed" | "unqueued">("upcoming");
   const [searchQuery, setSearchQuery] = useState("");
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+
+  // Sold Animation Overlay state
+  const [soldOverlay, setSoldOverlay] = useState<{
+    type: "sold" | "unsold";
+    playerName: string;
+    teamName: string;
+    price: number;
+    photoUrl?: string;
+  } | null>(null);
+
+  // Detect when a player is sold or marked unsold to trigger full-screen celebration/unsold animation overlay
+  useEffect(() => {
+    if (!auctionState) return;
+
+    const finishedPlayers = players.filter((p) => p.status === "sold" || p.status === "unsold");
+    if (finishedPlayers.length > 0) {
+      const sortedFinished = [...finishedPlayers].sort((a, b) => {
+        const aTime = a.updatedAt?.seconds || 0;
+        const bTime = b.updatedAt?.seconds || 0;
+        return bTime - aTime;
+      });
+
+      const latestFinished = sortedFinished[0];
+      if (latestFinished) {
+        const finishedSeconds = latestFinished.updatedAt?.seconds || 0;
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        if (nowSeconds - finishedSeconds < 6) {
+          const winningTeam = teams.find((t) => t.id === latestFinished.soldToTeamId);
+
+          const stateTimer = setTimeout(() => {
+            setSoldOverlay({
+              type: latestFinished.status as "sold" | "unsold",
+              playerName: latestFinished.name,
+              teamName: winningTeam?.teamName || "Anonymous Team",
+              price: latestFinished.soldPrice || latestFinished.basePrice,
+              photoUrl: latestFinished.photoUrl,
+            });
+          }, 0);
+
+          const hideTimer = setTimeout(() => {
+            setSoldOverlay(null);
+          }, 2000);
+
+          return () => {
+            clearTimeout(stateTimer);
+            clearTimeout(hideTimer);
+          };
+        }
+      }
+    }
+  }, [players, auctionState, teams]);
 
   useEffect(() => {
     const token = localStorage.getItem("admin_token");
@@ -370,7 +423,7 @@ export default function LiveAuctionControl() {
         },
         body: JSON.stringify({
           id: activePlayer.id,
-          status: "pool",
+          status: "unsold",
           soldPrice: null,
           soldToTeamId: null,
         }),
@@ -531,6 +584,18 @@ export default function LiveAuctionControl() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-8 text-slate-100 flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Sold/Unsold Celebration Overlay */}
+      {soldOverlay && (
+        <SoldCelebrationOverlay
+          type={soldOverlay.type}
+          playerName={soldOverlay.playerName}
+          teamName={soldOverlay.teamName}
+          price={soldOverlay.price}
+          photoUrl={soldOverlay.photoUrl}
+          onClose={() => setSoldOverlay(null)}
+        />
+      )}
+
       <div className="lg:col-span-2 flex flex-col gap-6">
         <div className="rounded-xl border border-slate-800 bg-[#1E293B] p-6">
           <h2 className="text-xl font-extrabold uppercase tracking-wider mb-6 border-b border-slate-850 pb-3 flex items-center justify-between">
