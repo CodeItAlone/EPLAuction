@@ -194,7 +194,7 @@ export default function AdminDashboard() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         <div className="rounded-xl border border-slate-800 bg-[#1E293B] p-5">
-          <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">Total Pool</span>
+          <span className="text-[10px] text-slate-500 font-bold block uppercase tracking-wider">Total Players In Pool</span>
           <span className="text-3xl font-black text-slate-100 block mt-1">{totalPlayers}</span>
         </div>
         <div className="rounded-xl border border-slate-800 bg-[#1E293B] p-5">
@@ -206,7 +206,7 @@ export default function AdminDashboard() {
           <span className="text-3xl font-black text-red-400 block mt-1">{unsoldStatusCount}</span>
         </div>
         <div className="rounded-xl border border-slate-800 bg-[#1E293B] p-5">
-          <span className="text-[10px] text-blue-500 font-bold block uppercase tracking-wider">Available Pool</span>
+          <span className="text-[10px] text-blue-500 font-bold block uppercase tracking-wider">Available Players In Pool</span>
           <span className="text-3xl font-black text-blue-400 block mt-1">{availableCount}</span>
         </div>
       </div>
