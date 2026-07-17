@@ -41,6 +41,7 @@ interface AuctionState {
   currentHighestBid: number;
   currentHighestTeamId: string | null;
   status: "idle" | "in-progress" | "paused" | "completed";
+  bidTimerExpiresAt?: number | null;
 }
 
 export default function Dashboard() {
@@ -50,6 +51,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<"players" | "teams" | "live">("live");
   const [playerFilter, setPlayerFilter] = useState<"all" | "pool" | "sold" | "unsold">("all");
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   // Subscribe to real-time collections
   useEffect(() => {
@@ -95,6 +97,28 @@ export default function Dashboard() {
       unsubState();
     };
   }, [selectedTeamId]);
+
+  // Sync timeLeft with auctionState.bidTimerExpiresAt
+  useEffect(() => {
+    if (!auctionState?.bidTimerExpiresAt) {
+      setTimeLeft(null);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((auctionState.bidTimerExpiresAt! - Date.now()) / 1000));
+      setTimeLeft(remaining);
+
+      if (remaining === 0) {
+        clearInterval(interval);
+      }
+    }, 500);
+
+    const remaining = Math.max(0, Math.ceil((auctionState.bidTimerExpiresAt - Date.now()) / 1000));
+    setTimeLeft(remaining);
+
+    return () => clearInterval(interval);
+  }, [auctionState?.bidTimerExpiresAt]);
 
   // Find current active player
   const activePlayer = players.find((p) => p.id === auctionState?.currentPlayerId);
@@ -211,6 +235,17 @@ export default function Dashboard() {
                   <p className="text-slate-400 text-sm mt-1 uppercase font-bold tracking-wider">
                     Base Price: {activePlayer.basePrice} points
                   </p>
+
+                  {timeLeft !== null && (
+                    <div className="mt-4 bg-amber-500/10 border border-amber-500/20 p-3 rounded-xl flex items-center justify-between px-6">
+                      <span className="text-[10px] text-amber-500 font-black uppercase tracking-widest animate-pulse">
+                        ⏱️ Live Bid Timer
+                      </span>
+                      <span className="text-xl font-black text-amber-400">
+                        {timeLeft}s
+                      </span>
+                    </div>
+                  )}
 
                   {/* Active Bid Display */}
                   <div className="mt-8 rounded-xl bg-slate-900/60 p-6 border border-slate-800">

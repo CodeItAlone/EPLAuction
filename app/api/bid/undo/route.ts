@@ -83,6 +83,7 @@ export async function POST(req: Request) {
         currentHighestTeamId: null,
         status: "in-progress",
         currentQueueIndex,
+        bidTimerExpiresAt: null,
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
 

@@ -41,12 +41,14 @@ interface AuctionState {
   status: string;
   queue?: string[];
   currentQueueIndex?: number;
+  bidTimerExpiresAt?: number | null;
 }
 
 export default function ProjectorMode() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [auctionState, setAuctionState] = useState<AuctionState | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   // Sold Animation Overlay state
   const [soldOverlay, setSoldOverlay] = useState<{
@@ -88,6 +90,28 @@ export default function ProjectorMode() {
       unsubState();
     };
   }, []);
+
+  // Sync timeLeft with auctionState.bidTimerExpiresAt
+  useEffect(() => {
+    if (!auctionState?.bidTimerExpiresAt) {
+      setTimeLeft(null);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((auctionState.bidTimerExpiresAt! - Date.now()) / 1000));
+      setTimeLeft(remaining);
+
+      if (remaining === 0) {
+        clearInterval(interval);
+      }
+    }, 500);
+
+    const remaining = Math.max(0, Math.ceil((auctionState.bidTimerExpiresAt - Date.now()) / 1000));
+    setTimeLeft(remaining);
+
+    return () => clearInterval(interval);
+  }, [auctionState?.bidTimerExpiresAt]);
 
   // Detect when a player is sold to trigger full-screen animation overlay
   useEffect(() => {
@@ -237,6 +261,21 @@ export default function ProjectorMode() {
 
                 {/* Bidding logs & details */}
                 <div className="flex flex-col gap-6 justify-center">
+                  {timeLeft !== null && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl text-center relative overflow-hidden flex items-center justify-between px-6">
+                      <div className="flex flex-col text-left">
+                        <span className="text-[10px] text-amber-500 font-black uppercase tracking-widest animate-pulse">
+                          ⏱️ Final Countdown
+                        </span>
+                        <span className="text-xs text-amber-400/80 font-medium">
+                          Auto-selling to highest bidder in
+                        </span>
+                      </div>
+                      <span className="text-4xl font-black text-amber-400">
+                        {timeLeft}s
+                      </span>
+                    </div>
+                  )}
                   <div className="bg-[#121927] border border-slate-800 p-6 rounded-2xl text-center">
                     <span className="text-xs text-slate-500 font-black uppercase tracking-widest block mb-1">
                       Current Highest Bid
